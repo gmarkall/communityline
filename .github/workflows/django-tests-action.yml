@@ -1,0 +1,47 @@
+name: django-testing
+
+on: [pull_request, push]
+
+env:
+  DJANGO_SECRET_KEY: "x#r8^*sj#x)3ixg4f2geyqaj!iyi)#cufw8jw#d(3y%udq2re0"
+  SENDGRID_API_KEY: "test"
+  TWILIO_ACCOUNT_SID: "test"
+  TWILIO_AUTH_TOKEN: "testtoken"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('.github/workflows/requirements.txt', 'requirements/base.txt', 'requirements/production.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: set PY
+        run: echo "PY=$(python3 -VV | sha256sum | cut -d' ' -f1)" >> $GITHUB_ENV
+      - uses: actions/cache@v3
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit|${{ env.PY }}|${{ hashFiles('.pre-commit-config.yaml') }}
+      - uses: actions/setup-python@v2
+      - run: python3 -m pip install -r requirements/production.txt
+      # This is for when the settings file changes are merged in, we can bootstrap the local.py file
+      # into the correct directory and then the tests below should still work.   Also, we can pull in
+      # Github Actions secrets for the Twilio and Sendgrid stuff (sandbox/dev account creds) and still
+      # manage to test this functionality
+      - name: create local.py
+        run: |
+          cat <<EoI > villageline/settings/local.py
+          from .settings import *
+          SECRET_KEY = "${{ env.DJANGO_SECRET_KEY }}"
+          ALLOWED_HOSTS = []
+          TWILIO_ACCOUNT_SID = ""
+          TWILIO_AUTH_TOKEN = ""
+          SENDGRID_API_KEY = ""
+          EoI
+      - name: Running django migrate
+        run: python3 manage.py migrate
+      - name: Running django tests
+        run: python3 manage.py test
