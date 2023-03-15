@@ -1,0 +1,63 @@
+name: django-testing
+
+on: [pull_request, push]
+
+env:
+  DJANGO_SECRET_KEY: "x#r8^*sj#x)3ixg4f2geyqaj!iyi)#cufw8jw#d(3y%udq2re0"
+  SENDGRID_API_KEY: "test"
+  TWILIO_ACCOUNT_SID: "test"
+  TWILIO_AUTH_TOKEN: "testtoken"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.7", "3.8", "3.9", "3.10", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          check-latest: true
+          cache: 'pip'
+          cache-dependency-path: |
+            **/setup.cfg
+            **/requirements.txt
+            **/requirements/*.txt
+      - name: set PY
+        run: echo "PY=$(python3 -VV | sha256sum | cut -d' ' -f1)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v3
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit|${{ env.PY }}|${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          check-latest: true
+          cache: 'pip'
+          cache-dependency-path: |
+            **/setup.cfg
+            **/requirements.txt
+            **/requirements/*.txt
+      - name: pip install requirements
+        run: pip3 install -r requirements/production.txt
+      - name: create local.py
+        run: |
+          cat <<EoI > villageline/settings/local.py
+          from .settings import *
+          SECRET_KEY = "${{ env.DJANGO_SECRET_KEY }}"
+          ALLOWED_HOSTS = []
+          TWILIO_ACCOUNT_SID = ""
+          TWILIO_AUTH_TOKEN = ""
+          SENDGRID_API_KEY = ""
+          EoI
+      - name: Running django migrate
+        run: python3 manage.py migrate
+      - name: Running django tests
+        run: python3 manage.py test
